@@ -23,14 +23,16 @@ jobs:
         
     - name: Fetch org members and update HTML
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         ORG_NAME: 'HVA-FRC-3824'
+        TEAM_SLUG: 'programmers'
       run: |
         node << 'EOF'
         const https = require('https');
         const fs = require('fs');
 
         const ORG_NAME = process.env.ORG_NAME;
+        const TEAM_SLUG = process.env.TEAM_SLUG;
         const TOKEN = process.env.GITHUB_TOKEN;
 
         function httpsGet(url) {
@@ -56,8 +58,14 @@ jobs:
           });
         }
 
+        async function getTeamMembers() {
+          console.log(`Fetching members of team: ${TEAM_SLUG}...`);
+          const url = `https://api.github.com/orgs/${ORG_NAME}/teams/${TEAM_SLUG}/members?per_page=100`;
+          return await httpsGet(url);
+        }
+
         async function getOrgMembers() {
-          console.log('Fetching organization members...');
+          console.log('Fetching organization members (fallback)...');
           const url = `https://api.github.com/orgs/${ORG_NAME}/members?per_page=100`;
           return await httpsGet(url);
         }
@@ -125,9 +133,19 @@ jobs:
         async function main() {
           console.log('=== Starting Rankings Update ===');
           console.log(`Organization: ${ORG_NAME}`);
+          console.log(`Team: ${TEAM_SLUG}`);
           
-          const members = await getOrgMembers();
-          console.log(`Found ${members.length} organization members`);
+          let members;
+          
+          try {
+            members = await getTeamMembers();
+            console.log(`✓ Found ${members.length} team members`);
+          } catch (err) {
+            console.log(`✗ Could not fetch team members: ${err.message}`);
+            console.log('Falling back to organization members...');
+            members = await getOrgMembers();
+            console.log(`✓ Found ${members.length} organization members`);
+          }
           
           const commitCounts = {};
           
