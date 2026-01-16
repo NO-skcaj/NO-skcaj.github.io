@@ -1,0 +1,191 @@
+name: Update Programmer Rankings
+
+on:
+  schedule:
+    # Runs every day at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  update-rankings:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Fetch team data and update HTML
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ORG_NAME: 'HVA-FRC-3824'
+        TEAM_SLUG: 'programmers'
+      run: |
+        node << 'EOF'
+        const https = require('https');
+        const fs = require('fs');
+
+        const ORG_NAME = process.env.ORG_NAME;
+        const TEAM_SLUG = process.env.TEAM_SLUG;
+        const TOKEN = process.env.GITHUB_TOKEN;
+
+        function httpsGet(url) {
+          return new Promise((resolve, reject) => {
+            https.get(url, {
+              headers: {
+                'User-Agent': 'GitHub-Actions',
+                'Authorization': `token ${TOKEN}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            }, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  resolve(JSON.parse(data));
+                } else {
+                  reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+                }
+              });
+            }).on('error', reject);
+          });
+        }
+
+        async function getTeamMembers() {
+          const url = `https://api.github.com/orgs/${ORG_NAME}/teams/${TEAM_SLUG}/members`;
+          return await httpsGet(url);
+        }
+
+        async function getUserCommits(username) {
+          // Get all repos in the org
+          const reposUrl = `https://api.github.com/orgs/${ORG_NAME}/repos?per_page=100`;
+          const repos = await httpsGet(reposUrl);
+          
+          let totalCommits = 0;
+          
+          // For each repo, count user's commits
+          for (const repo of repos) {
+            try {
+              const commitsUrl = `https://api.github.com/repos/${ORG_NAME}/${repo.name}/commits?author=${username}&per_page=1`;
+              const response = await new Promise((resolve, reject) => {
+                https.get(commitsUrl, {
+                  headers: {
+                    'User-Agent': 'GitHub-Actions',
+                    'Authorization': `token ${TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                  }
+                }, (res) => {
+                  let data = '';
+                  res.on('data', chunk => data += chunk);
+                  res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, data }));
+                }).on('error', reject);
+              });
+              
+              // GitHub returns the total count in the Link header
+              const linkHeader = response.headers.link;
+              if (linkHeader) {
+                const match = linkHeader.match(/page=(\d+)>; rel="last"/);
+                if (match) {
+                  totalCommits += parseInt(match[1]);
+                } else {
+                  totalCommits += 1; // Only one page of commits
+                }
+              } else if (response.statusCode === 200 && response.data !== '[]') {
+                totalCommits += 1; // At least one commit
+              }
+            } catch (err) {
+              console.log(`Error fetching commits for ${username} in ${repo.name}: ${err.message}`);
+            }
+          }
+          
+          return totalCommits;
+        }
+
+        async function main() {
+          console.log('Fetching team members...');
+          const members = await getTeamMembers();
+          
+          console.log(`Found ${members.length} team members`);
+          
+          const commitCounts = {};
+          
+          for (const member of members) {
+            console.log(`Fetching commits for ${member.login}...`);
+            const commits = await getUserCommits(member.login);
+            commitCounts[member.login] = commits;
+            console.log(`${member.login}: ${commits} commits`);
+            
+            // Rate limiting: wait a bit between users
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
+          // Read the template HTML
+          const template = fs.readFileSync('index.html', 'utf8');
+          
+          // Create the rankings object (you can customize this logic)
+          // For now, we'll rank by commit count
+          const sortedMembers = Object.entries(commitCounts).sort((a, b) => b[1] - a[1]);
+          
+          const rankings = {
+            'S': [],
+            'A': [],
+            'B': [],
+            'C': [],
+            'D': [],
+            'E': [],
+            'F': []
+          };
+          
+          // Distribute members across tiers based on commit counts
+          sortedMembers.forEach((member, index) => {
+            const username = member[0];
+            if (index < sortedMembers.length * 0.1) rankings['S'].push(username);
+            else if (index < sortedMembers.length * 0.25) rankings['A'].push(username);
+            else if (index < sortedMembers.length * 0.5) rankings['B'].push(username);
+            else if (index < sortedMembers.length * 0.7) rankings['C'].push(username);
+            else if (index < sortedMembers.length * 0.85) rankings['D'].push(username);
+            else if (index < sortedMembers.length * 0.95) rankings['E'].push(username);
+            else rankings['F'].push(username);
+          });
+          
+          // Replace the data in the HTML
+          const rankingsStr = JSON.stringify(rankings, null, 12).replace(/^/gm, '        ');
+          const commitsStr = JSON.stringify(commitCounts, null, 12).replace(/^/gm, '        ');
+          
+          let updated = template.replace(
+            /const rankings = \{[\s\S]*?\};/,
+            `const rankings = ${rankingsStr};`
+          );
+          
+          updated = updated.replace(
+            /const commitCounts = \{[\s\S]*?\};/,
+            `const commitCounts = ${commitsStr};`
+          );
+          
+          // Add last updated timestamp
+          const timestamp = new Date().toISOString();
+          updated = updated.replace(
+            /\/\/ 2026 Rankings/,
+            `// Last updated: ${timestamp}`
+          );
+          
+          fs.writeFileSync('index.html', updated);
+          console.log('HTML file updated successfully!');
+        }
+
+        main().catch(err => {
+          console.error('Error:', err);
+          process.exit(1);
+        });
+        EOF
+        
+    - name: Commit and push if changed
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add index.html
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update programmer rankings [skip ci]" && git push)
