@@ -38,8 +38,9 @@ jobs:
             https.get(url, {
               headers: {
                 'User-Agent': 'GitHub-Actions',
-                'Authorization': `token ${TOKEN}`,
-                'Accept': 'application/vnd.github.v3+json'
+                'Authorization': `Bearer ${TOKEN}`,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28'
               }
             }, (res) => {
               let data = '';
@@ -55,8 +56,31 @@ jobs:
           });
         }
 
-        async function getTeamMembers() {
-          const url = `https://api.github.com/orgs/${ORG_NAME}/teams/${TEAM_SLUG}/members`;
+        async function getTeamId() {
+          const url = `https://api.github.com/orgs/${ORG_NAME}/teams`;
+          const teams = await httpsGet(url);
+          const team = teams.find(t => t.slug === TEAM_SLUG);
+          if (!team) {
+            throw new Error(`Team '${TEAM_SLUG}' not found. Available teams: ${teams.map(t => t.slug).join(', ')}`);
+          }
+          return team.id;
+        }
+
+        async function getTeamMembers(teamId) {
+          const url = `https://api.github.com/organizations/${ORG_NAME}/team/${teamId}/members`;
+          try {
+            return await httpsGet(url);
+          } catch (err) {
+            // Try alternative endpoint
+            console.log('Trying alternative endpoint...');
+            const altUrl = `https://api.github.com/orgs/${ORG_NAME}/teams/${TEAM_SLUG}/members`;
+            return await httpsGet(altUrl);
+          }
+        }
+
+        async function getOrgMembers() {
+          // Fallback: get all org members
+          const url = `https://api.github.com/orgs/${ORG_NAME}/members`;
           return await httpsGet(url);
         }
 
@@ -75,8 +99,9 @@ jobs:
                 https.get(commitsUrl, {
                   headers: {
                     'User-Agent': 'GitHub-Actions',
-                    'Authorization': `token ${TOKEN}`,
-                    'Accept': 'application/vnd.github.v3+json'
+                    'Authorization': `Bearer ${TOKEN}`,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
                   }
                 }, (res) => {
                   let data = '';
@@ -107,9 +132,19 @@ jobs:
 
         async function main() {
           console.log('Fetching team members...');
-          const members = await getTeamMembers();
+          let members;
           
-          console.log(`Found ${members.length} team members`);
+          try {
+            const teamId = await getTeamId();
+            console.log(`Found team ID: ${teamId}`);
+            members = await getTeamMembers(teamId);
+          } catch (err) {
+            console.log(`Could not fetch team members: ${err.message}`);
+            console.log('Falling back to organization members...');
+            members = await getOrgMembers();
+          }
+          
+          console.log(`Found ${members.length} members`);
           
           const commitCounts = {};
           
@@ -128,7 +163,9 @@ jobs:
           
           // Create the rankings object (you can customize this logic)
           // For now, we'll rank by commit count
-          const sortedMembers = Object.entries(commitCounts).sort((a, b) => b[1] - a[1]);
+          const sortedMembers = Object.entries(commitCounts)
+            .sort((a, b) => b[1] - a[1])
+            .filter(([_, commits]) => commits > 0); // Only include members with commits
           
           const rankings = {
             'S': [],
