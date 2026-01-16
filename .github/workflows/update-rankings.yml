@@ -16,6 +16,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -227,6 +230,8 @@ jobs:
           
           fs.writeFileSync('index.html', updated);
           console.log('\nHTML file updated successfully!');
+          console.log(`Total members in rankings: ${sortedMembers.length}`);
+          console.log('File size:', fs.statSync('index.html').size, 'bytes');
         }
 
         main().catch(err => {
@@ -239,10 +244,21 @@ jobs:
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        
+        echo "=== Git Status ==="
+        git status
+        
+        echo "=== Changes in index.html ==="
+        git diff index.html | head -50
+        
         git add index.html
+        
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
+          echo "Committing changes..."
           git commit -m "Auto-update programmer rankings [skip ci]"
+          echo "Pushing to repository..."
           git push
+          echo "Push complete!"
         fi
