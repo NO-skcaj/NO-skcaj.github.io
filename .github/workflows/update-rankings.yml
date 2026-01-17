@@ -162,15 +162,10 @@ jobs:
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
           
-          const template = fs.readFileSync('index.html', 'utf8');
-          
-          console.log('\n=== Template Info ===');
-          console.log('Original file size:', template.length, 'characters');
-          
           const sortedMembers = Object.entries(commitCounts)
-            .sort((a, b) => b[1] - a[1]); // Sort by commits, keep everyone including 0 commits
+            .sort((a, b) => b[1] - a[1]);
           
-          console.log('Total members:', sortedMembers.length);
+          console.log('\nTotal members:', sortedMembers.length);
           
           const rankings = {
             'S': [],
