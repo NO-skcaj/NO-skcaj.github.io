@@ -165,12 +165,12 @@ jobs:
           const template = fs.readFileSync('index.html', 'utf8');
           
           console.log('\n=== Template Info ===');
-          console.log('Template file size:', template.length, 'characters');
+          console.log('Original file size:', template.length, 'characters');
           
           const sortedMembers = Object.entries(commitCounts)
             .sort((a, b) => b[1] - a[1]); // Sort by commits, keep everyone including 0 commits
           
-          console.log('\nAll members (including 0 commits):', sortedMembers.length);
+          console.log('Total members:', sortedMembers.length);
           
           const rankings = {
             'S': [],
@@ -222,11 +222,10 @@ jobs:
             `<div class="subtitle"><span class="code-decoration">// </span>Last updated: ${timestamp}<span class="code-decoration"> //</span></div>`
           );
           
-          fs.writeFileSync('index.html', updated);
-          console.log('\n✓ File written!');
-          console.log('New file size:', updated.length, 'bytes');
-          console.log('Old file size:', template.length, 'bytes');
-          console.log('Difference:', updated.length - template.length, 'bytes');
+          fs.writeFileSync('index.html', htmlContent);
+          console.log('\n✓ HTML file completely regenerated!');
+          console.log('New file size:', htmlContent.length, 'bytes');
+          console.log('Members in tier list:', sortedMembers.length);
         }
 
         main().catch(err => {
