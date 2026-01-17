@@ -82,7 +82,6 @@ jobs:
           
           for (const repo of repos) {
             try {
-              // Use the commits endpoint with author filter
               const commitsUrl = `https://api.github.com/repos/${ORG_NAME}/${repo.name}/commits?author=${username}&per_page=100`;
               
               const response = await new Promise((resolve, reject) => {
@@ -108,14 +107,11 @@ jobs:
                 const commits = JSON.parse(response.data);
                 const commitCount = commits.length;
                 
-                // Check if there are more pages
                 const linkHeader = response.headers.link;
                 if (linkHeader && linkHeader.includes('rel="last"')) {
-                  // Extract the last page number
                   const match = linkHeader.match(/page=(\d+)>; rel="last"/);
                   if (match) {
                     const lastPage = parseInt(match[1]);
-                    // Rough estimate: lastPage * 100 commits per page
                     totalCommits += lastPage * 100;
                   } else {
                     totalCommits += commitCount;
@@ -177,7 +173,6 @@ jobs:
             'F': []
           };
           
-          // Distribute members across tiers based on commit counts
           sortedMembers.forEach((member, index) => {
             const username = member[0];
             const ratio = index / sortedMembers.length;
@@ -198,28 +193,305 @@ jobs:
             }
           });
           
-          const rankingsStr = JSON.stringify(rankings, null, 12).replace(/^/gm, '        ');
-          const commitsStr = JSON.stringify(commitCounts, null, 12).replace(/^/gm, '        ');
+          console.log('\n=== Generating HTML ===');
           
-          let updated = template.replace(
-            /const rankings = \{[\s\S]*?\};/,
-            `const rankings = ${rankingsStr};`
-          );
+          const rankingsStr = JSON.stringify(rankings, null, 8);
+          const commitsStr = JSON.stringify(commitCounts, null, 8);
           
-          updated = updated.replace(
-            /const commitCounts = \{[\s\S]*?\};/,
-            `const commitCounts = ${commitsStr};`
-          );
-          
-          const timestamp = new Date().toISOString().split('T')[0];
-          updated = updated.replace(
-            /<div class="subtitle">.*?<\/div>/,
-            `<div class="subtitle"><span class="code-decoration">// </span>Last updated: ${timestamp}<span class="code-decoration"> //</span></div>`
-          );
+          const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Programmer Tier List</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            position: relative;
+        }
+
+        .header::before {
+            content: '{ }';
+            font-size: 60px;
+            color: #58a6ff;
+            opacity: 0.2;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: -20px;
+        }
+
+        h1 {
+            font-size: 3em;
+            background: linear-gradient(135deg, #58a6ff, #bc8cff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        .subtitle {
+            color: #8b949e;
+            font-size: 1.1em;
+            letter-spacing: 2px;
+        }
+
+        .tier-list {
+            background: #161b22;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            border: 1px solid #30363d;
+        }
+
+        .tier-row {
+            display: flex;
+            margin-bottom: 15px;
+            min-height: 80px;
+            border: 2px solid #30363d;
+            border-radius: 8px;
+            overflow: visible;
+            background: #0d1117;
+            transition: all 0.3s;
+        }
+
+        .tier-row:hover {
+            border-color: #58a6ff;
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+        }
+
+        .tier-label {
+            width: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5em;
+            font-weight: bold;
+            text-transform: uppercase;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tier-label::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            opacity: 0.1;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(255,255,255,0.1) 10px,
+                rgba(255,255,255,0.1) 20px
+            );
+        }
+
+        .tier-S { background: linear-gradient(135deg, #ff0844, #ff6b6b); color: white; }
+        .tier-A { background: linear-gradient(135deg, #ff6b35, #ff8c42); color: white; }
+        .tier-B { background: linear-gradient(135deg, #f7b731, #ffd93d); color: #2d3436; }
+        .tier-C { background: linear-gradient(135deg, #6dd5ed, #2193b0); color: white; }
+        .tier-D { background: linear-gradient(135deg, #4facfe, #00f2fe); color: white; }
+        .tier-E { background: linear-gradient(135deg, #a29bfe, #6c5ce7); color: white; }
+        .tier-F { background: linear-gradient(135deg, #636e72, #2d3436); color: white; }
+
+        .tier-content {
+            flex: 1;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 15px;
+            align-items: center;
+            position: relative;
+            overflow: visible;
+        }
+
+        .programmer-tag {
+            background: #21262d;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 0.95em;
+            font-weight: 600;
+            border: 1px solid #30363d;
+            transition: all 0.3s;
+            cursor: default;
+            position: relative;
+            overflow: visible;
+        }
+
+        .programmer-tag::before {
+            content: '//';
+            position: absolute;
+            left: 5px;
+            opacity: 0.3;
+            font-size: 0.8em;
+        }
+
+        .programmer-tag:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+        }
+
+        .tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background: #1c2128;
+            color: #58a6ff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s, transform 0.3s;
+            border: 1px solid #30363d;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+
+        .tooltip::before {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #30363d;
+        }
+
+        .programmer-tag:hover .tooltip {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-12px);
+        }
+
+        .tier-S + .tier-content .programmer-tag:hover { border-color: #ff0844; box-shadow: 0 4px 12px rgba(255, 8, 68, 0.3); }
+        .tier-A + .tier-content .programmer-tag:hover { border-color: #ff6b35; box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3); }
+        .tier-B + .tier-content .programmer-tag:hover { border-color: #f7b731; box-shadow: 0 4px 12px rgba(247, 183, 49, 0.3); }
+        .tier-C + .tier-content .programmer-tag:hover { border-color: #6dd5ed; box-shadow: 0 4px 12px rgba(109, 213, 237, 0.3); }
+        .tier-D + .tier-content .programmer-tag:hover { border-color: #4facfe; box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3); }
+        .tier-E + .tier-content .programmer-tag:hover { border-color: #a29bfe; box-shadow: 0 4px 12px rgba(162, 155, 254, 0.3); }
+        .tier-F + .tier-content .programmer-tag:hover { border-color: #636e72; box-shadow: 0 4px 12px rgba(99, 110, 114, 0.3); }
+
+        .empty-tier {
+            color: #484f58;
+            font-style: italic;
+            padding: 15px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #484f58;
+            font-size: 0.9em;
+        }
+
+        .code-decoration {
+            color: #58a6ff;
+            opacity: 0.3;
+        }
+
+        @media (max-width: 768px) {
+            .tier-row {
+                flex-direction: column;
+            }
+
+            .tier-label {
+                width: 100%;
+                height: 60px;
+                font-size: 2em;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+
+            .header::before {
+                font-size: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Programmer Tier List</h1>
+            <div class="subtitle"><span class="code-decoration">// </span>Last updated: ${new Date().toISOString().split('T')[0]}<span class="code-decoration"> //</span></div>
+        </div>
+
+        <div class="tier-list" id="tierList"></div>
+
+        <div class="footer">
+            <span class="code-decoration">console.log(</span>"Auto-updated via GitHub Actions"<span class="code-decoration">);</span>
+        </div>
+    </div>
+
+    <script>
+        const rankings = ${rankingsStr};
+        const commitCounts = ${commitsStr};
+
+        function renderTierList() {
+            const container = document.getElementById('tierList');
+            const tiers = ['S', 'A', 'B', 'C', 'D', 'E', 'F'];
+            
+            container.innerHTML = tiers.map(tier => {
+                const programmers = rankings[tier] || [];
+                
+                return \`
+                    <div class="tier-row">
+                        <div class="tier-label tier-\${tier}">\${tier}</div>
+                        <div class="tier-content">
+                            \${programmers.length > 0 
+                                ? programmers.map(name => {
+                                    const commits = commitCounts[name] || 0;
+                                    return \`
+                                        <div class="programmer-tag">
+                                            \${name}
+                                            <div class="tooltip">\${commits.toLocaleString()} commits</div>
+                                        </div>
+                                    \`;
+                                }).join('')
+                                : '<div class="empty-tier">// No programmers in this tier</div>'
+                            }
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+        }
+
+        renderTierList();
+    </script>
+</body>
+</html>`;
           
           fs.writeFileSync('index.html', htmlContent);
           console.log('\n✓ HTML file completely regenerated!');
-          console.log('New file size:', htmlContent.length, 'bytes');
+          console.log('File size:', htmlContent.length, 'bytes');
           console.log('Members in tier list:', sortedMembers.length);
         }
 
