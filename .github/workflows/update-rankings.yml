@@ -242,21 +242,9 @@ jobs:
         });
         EOF
         
-    - name: Commit and push if changed
+- name: Commit and push if changed
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        
-        echo "=== Git Status ==="
-        git status
-        
-        echo "=== Changes in index.html ==="
-        git diff index.html | head -50
-        
         git add index.html
-        
-        echo "Committing changes..."
-        git commit -m "Auto-update programmer rankings [skip ci]"
-        echo "Pushing to repository..."
-        git push
-        echo "Push complete!"
+
