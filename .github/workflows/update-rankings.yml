@@ -173,18 +173,21 @@ jobs:
             'F': []
           };
           
-          sortedMembers.forEach((member, index) => {
-            const username = member[0];
-            const ratio = index / sortedMembers.length;
-            
-            if (ratio < 0.10) rankings['S'].push(username);
-            else if (ratio < 0.25) rankings['A'].push(username);
-            else if (ratio < 0.50) rankings['B'].push(username);
-            else if (ratio < 0.70) rankings['C'].push(username);
-            else if (ratio < 0.85) rankings['D'].push(username);
-            else if (ratio < 0.95) rankings['E'].push(username);
-            else rankings['F'].push(username);
-          });
+          for (const [username, commits] of Object.entries(commitCounts)) {
+          
+            let tier;
+          
+            if (commits === 0) tier = 'F';
+            else if (commits < 5) tier = 'E';
+            else if (commits < 20) tier = 'D';
+            else if (commits < 50) tier = 'C';
+            else if (commits < 100) tier = 'B';
+            else if (commits < 200) tier = 'A';
+            else tier = 'S';
+          
+            rankings[tier].push(username);
+          }
+
           
           console.log('\n=== Tier Distribution ===');
           Object.entries(rankings).forEach(([tier, members]) => {
