@@ -164,20 +164,15 @@ jobs:
           
           const template = fs.readFileSync('index.html', 'utf8');
           
+          console.log('\n=== Template Info ===');
+          console.log('Template file size:', template.length, 'characters');
+          console.log('Has rankings placeholder:', template.includes('const rankings'));
+          console.log('Has commitCounts placeholder:', template.includes('const commitCounts'));
+          
           const sortedMembers = Object.entries(commitCounts)
-            .filter(([_, commits]) => commits > 0)
-            .sort((a, b) => b[1] - a[1]);
+            .sort((a, b) => b[1] - a[1]); // Sort by commits, keep everyone including 0 commits
           
           console.log(`\nActive contributors: ${sortedMembers.length}`);
-          
-          if (sortedMembers.length === 0) {
-            console.log('WARNING: No members with commits found. Check if repos exist or if usernames match commit authors.');
-            console.log('Including all members with 0 commits for now...');
-            // Include all members even if they have 0 commits
-            Object.keys(commitCounts).forEach(username => {
-              sortedMembers.push([username, commitCounts[username]]);
-            });
-          }
           
           const rankings = {
             'S': [],
@@ -189,6 +184,7 @@ jobs:
             'F': []
           };
           
+          // Distribute members across tiers based on commit counts
           sortedMembers.forEach((member, index) => {
             const username = member[0];
             const ratio = index / sortedMembers.length;
@@ -229,9 +225,15 @@ jobs:
           );
           
           fs.writeFileSync('index.html', updated);
-          console.log('\nHTML file updated successfully!');
+          console.log('\n✓ HTML file updated successfully!');
           console.log(`Total members in rankings: ${sortedMembers.length}`);
-          console.log('File size:', fs.statSync('index.html').size, 'bytes');
+          console.log('Updated file size:', fs.statSync('index.html').size, 'bytes');
+          console.log('Original file size:', template.length, 'bytes');
+          
+          // Verify the file was actually written
+          const verification = fs.readFileSync('index.html', 'utf8');
+          const hasNewData = verification.includes(JSON.stringify(rankings));
+          console.log('Verification - new data written:', hasNewData);
         }
 
         main().catch(err => {
